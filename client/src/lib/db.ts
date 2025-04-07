@@ -124,7 +124,8 @@ class IndexedDBStorage implements LocalDbInterface {
     for (const storeName of Object.values(STORES)) {
       const items = await this.getAllItems(storeName);
       if (items.length > 0) {
-        const maxId = Math.max(...items.map(item => item.id));
+        // Type assertion to handle the 'unknown' type
+        const maxId = Math.max(...items.map((item: any) => item.id));
         this.idCounters[storeName] = maxId + 1;
       }
     }
@@ -168,11 +169,13 @@ class IndexedDBStorage implements LocalDbInterface {
       const store = this.getStore(storeName, "readwrite");
       
       // Assign an ID if one doesn't exist
-      if (item.id === undefined) {
+      if (item.id === undefined || item.id === 0) {
         item.id = this.getNextId(storeName);
       }
       
-      const request = store.add(item);
+      // Use put instead of add to avoid "Key already exists" errors
+      // This will replace the item if it exists, or add it if it doesn't
+      const request = store.put(item);
       
       request.onsuccess = () => resolve(item as T & { id: number });
       request.onerror = () => reject(request.error);
@@ -393,19 +396,24 @@ class IndexedDBStorage implements LocalDbInterface {
   async addTagToNote(noteId: number, tagId: number): Promise<void> {
     await this.init();
     
-    // Check if the relationship already exists
-    const existingRelations = await this.queryIndex<NoteTag>(
-      STORES.noteTags, 
-      'noteId_tagId', 
-      [noteId, tagId]
-    );
-    
-    if (existingRelations.length === 0) {
-      await this.addItem<NoteTag>(STORES.noteTags, {
-        id: 0, // Will be assigned in addItem
-        noteId,
-        tagId
-      });
+    try {
+      // Try to find an existing relation with the same noteId and tagId
+      // This is a more direct approach than querying the index
+      const allNoteTags = await this.getAllItems<NoteTag>(STORES.noteTags);
+      const existingRelation = allNoteTags.find(nt => nt.noteId === noteId && nt.tagId === tagId);
+      
+      if (!existingRelation) {
+        // No existing relation found, so create a new one
+        await this.addItem<NoteTag>(STORES.noteTags, {
+          id: 0, // Will be assigned in addItem
+          noteId,
+          tagId
+        });
+      }
+      // If relation already exists, do nothing
+    } catch (error) {
+      console.error("Error adding tag to note:", error);
+      throw error;
     }
   }
 

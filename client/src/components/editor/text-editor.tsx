@@ -1,4 +1,4 @@
-import { Editor } from '@tiptap/react';
+import { Editor, EditorContent } from '@tiptap/react';
 import { useCallback } from 'react';
 
 export type TextEditorProps = {
@@ -24,13 +24,15 @@ export function TextEditor({ editor, onSelectionChange }: TextEditorProps) {
   return (
     <div
       className="editor-content font-serif prose prose-lg max-w-none leading-relaxed"
-      onClick={() => editor.commands.focus()}
+      onClick={() => editor?.commands.focus()}
       onMouseUp={handleSelectionChange}
       onKeyUp={handleSelectionChange}
     >
-      <div className={editor.isEmpty ? 'text-gray-400' : ''}>
-        {editor.view.dom}
-      </div>
+      {/* Utilizzando EditorContent per gestire correttamente il rendering dell'editor */}
+      <EditorContent 
+        editor={editor} 
+        className={`min-h-[300px] ${editor.isEmpty ? 'text-gray-400' : ''}`}
+      />
     </div>
   );
 }

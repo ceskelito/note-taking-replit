@@ -11,3 +11,63 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
 }
+
+/* Editor styles */
+.ProseMirror {
+  outline: none;
+  min-height: 300px;
+  padding: 8px 0;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #adb5bd;
+  pointer-events: none;
+  height: 0;
+}
+
+.editor-content {
+  min-height: 300px;
+}
+
+/* Heading styles */
+.ProseMirror h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.ProseMirror h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+/* Lists */
+.ProseMirror ul, .ProseMirror ol {
+  padding-left: 1.5rem;
+}
+
+.ProseMirror ul li {
+  list-style-type: disc;
+}
+
+.ProseMirror ol li {
+  list-style-type: decimal;
+}
+
+/* Code blocks */
+.ProseMirror pre {
+  background-color: #f1f5f9;
+  border-radius: 0.375rem;
+  padding: 0.75rem;
+  font-family: monospace;
+  overflow-x: auto;
+}
