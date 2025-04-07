@@ -1,0 +1,106 @@
+Crea un progetto (ad esempio con React e/o React Native) che funzioni sia come app web sia in versione mobile (PWA o React Native). L’obiettivo è sviluppare un’app simile a Google Keep, con le seguenti caratteristiche:
+
+Gestione Note e Cartelle
+
+Possibilità di creare più cartelle (o “blocchi”/“collezioni”) in cui suddividere le note.
+
+Ogni cartella contiene un elenco di note.
+
+Possibilità di aggiungere tag alle note per semplificare la categorizzazione trasversale.
+
+Personalizzazione Grafica delle Note
+
+Colori di sfondo selezionabili per ogni nota.
+
+Font personalizzabili (family, grandezza testo, formattazione di base).
+
+Formattazione avanzata del testo (grassetto, corsivo, elenchi puntati/numerati, titoli, ecc.).
+
+Menu Contestuale di Editing
+
+Selezionando del testo in una nota, appare un menu contestuale che permette di applicare formattazioni (bold, italic, dimensioni, colori, ecc.).
+
+Questo menu contestuale deve essere reattivo, comparire solo alla selezione del testo, e scomparire una volta deselezionato o al click esterno.
+
+Salvataggio Locale o Tramite WebDAV
+
+Se l’utente non effettua il login, le note (e le relative impostazioni) vengono salvate localmente (ad es. in Local Storage o IndexedDB).
+
+Se l’utente configura un endpoint WebDAV (e opzionalmente fa login), le note vengono sincronizzate con quel servizio.
+
+L’utente può scegliere di passare da locale a WebDAV e viceversa senza perdere i dati.
+
+Login Opzionale e Database Supabase
+
+Implementare un sistema di login via email/password (numero di telefono opzionale).
+
+Se l’utente effettua il login, i dati delle note e le impostazioni vengono salvati nel database di Supabase.
+
+Integrare un modello di tabella o schema per conservare:
+
+Profilo utente (email, password hash, telefono opzionale, impostazioni personali).
+
+Note (contenuto, cartella di appartenenza, tag, stili applicati, data di creazione/modifica, ecc.).
+
+Configurazioni WebDAV (endpoint, eventuali credenziali) da associare all’utente.
+
+UI/UX Ispirata a Craft.do e Bear.app
+
+Design minimalista e curato.
+
+Palette colori chiara e leggibile, con ampio spazio bianco.
+
+Smooth animations e transizioni (ad es. con librerie come React Spring o Framer Motion, se necessario).
+
+Menu laterale o barra di navigazione per la selezione delle cartelle.
+
+Struttura del Progetto
+
+Front-end: Utilizza un framework che consenta di fare build per web e, se possibile, mobile nativo (React con React Native, oppure una PWA responsiva con React/Vue/Next.js).
+
+Autenticazione: Integra i metodi di Supabase Auth (login email/password).
+
+Database: Configura Supabase come back-end per salvare le informazioni dell’utente, le note e le impostazioni.
+
+WebDAV: Implementa un modulo/servizio che gestisca la sincronizzazione delle note con un endpoint WebDAV, se l’utente lo desidera.
+
+Salvataggio locale: Se nessun login o endpoint WebDAV è configurato, gestisci tutto localmente (Local Storage / IndexedDB) con la possibilità di spostare i dati online (o su WebDAV) successivamente.
+
+Controlli di sicurezza: Se si usa WebDAV, occorre prevedere crittografia o almeno trasmissione sicura (HTTPS), e proteggere opportunamente le credenziali.
+
+Funzionalità Extra
+
+Ricerca testuale all’interno delle note.
+
+Possibilità di “fissare” (pin) alcune note in alto.
+
+Supporto a Markdown facoltativo (in stile Bear.app).
+
+Eventuale integrazione di funzionalità drag-and-drop per riorganizzare le cartelle e le note.
+
+Tecnologie consigliate
+
+React (o React Native/Expo se vuoi una vera app nativa multipiattaforma).
+
+Supabase per l’autenticazione e il database (uso di “@supabase/supabase-js”).
+
+Libreria WebDAV (per esempio, “webdav” su npm) per interfacciarsi a endpoint WebDAV.
+
+LocalForage o IndexedDB se servono funzioni avanzate di storage su browser (in alternativa al semplice localStorage).
+
+Styled Components, Tailwind CSS o simili, per velocizzare la personalizzazione grafica.
+
+React Router (in caso di SPA web) per la navigazione tra cartelle e note.
+
+Qualunque libreria WYSIWYG/Editor inline per realizzare il menu contestuale, o gestione manuale degli eventi di selezione e formattazione.
+
+Richieste Finali
+
+Fornire la struttura di cartelle, i componenti principali e i file di configurazione (per Supabase e WebDAV).
+
+Implementare la logica di base per creare, modificare, visualizzare e cancellare note.
+
+Permettere la sincronizzazione delle note con Supabase o WebDAV se l’utente effettua login/configurazione.
+
+Implementare un design semplice ma ispirato a “https://www.craft.do/” e “https://bear.app/” per il look & feel.
+
