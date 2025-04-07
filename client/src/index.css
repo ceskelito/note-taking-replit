@@ -1,0 +1,256 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222.2 47.4% 11.2%;
+    --sidebar-primary: 222.2 47.4% 11.2%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: var(--ring);
+
+    /* Custom note colors */
+    --note-yellow: 49 96% 91%;
+    --note-blue: 201 94% 94%;
+    --note-green: 158 94% 91%;
+    --note-pink: 330 100% 95%;
+    --note-purple: 266 94% 96%;
+    --note-orange: 35 100% 92%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+/* Rich text editor styling */
+.editor-content h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.editor-content h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.editor-content p {
+  margin-bottom: 1rem;
+}
+
+.editor-content ul, .editor-content ol {
+  margin-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.editor-content ul {
+  list-style-type: disc;
+}
+
+.editor-content ol {
+  list-style-type: decimal;
+}
+
+.editor-content blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 1rem;
+  margin-left: 0;
+  margin-right: 0;
+  font-style: italic;
+  color: #4b5563;
+}
+
+.editor-content code {
+  font-family: 'JetBrains Mono', monospace;
+  background-color: #f3f4f6;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.875rem;
+}
+
+.editor-content pre {
+  background-color: #1f2937;
+  color: #f9fafb;
+  padding: 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.editor-content pre code {
+  background-color: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+/* Text selection styles */
+::selection {
+  background: rgba(59, 130, 246, 0.2);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Background color utilities for notes */
+.bg-note-yellow {
+  background-color: hsl(var(--note-yellow));
+}
+
+.bg-note-blue {
+  background-color: hsl(var(--note-blue));
+}
+
+.bg-note-green {
+  background-color: hsl(var(--note-green));
+}
+
+.bg-note-pink {
+  background-color: hsl(var(--note-pink));
+}
+
+.bg-note-purple {
+  background-color: hsl(var(--note-purple));
+}
+
+.bg-note-orange {
+  background-color: hsl(var(--note-orange));
+}
+
+/* Background color utilities for notes with lower opacity */
+.bg-note-yellow\/20 {
+  background-color: hsl(var(--note-yellow) / 0.2);
+}
+
+.bg-note-blue\/20 {
+  background-color: hsl(var(--note-blue) / 0.2);
+}
+
+.bg-note-green\/20 {
+  background-color: hsl(var(--note-green) / 0.2);
+}
+
+.bg-note-pink\/20 {
+  background-color: hsl(var(--note-pink) / 0.2);
+}
+
+.bg-note-purple\/20 {
+  background-color: hsl(var(--note-purple) / 0.2);
+}
+
+.bg-note-orange\/20 {
+  background-color: hsl(var(--note-orange) / 0.2);
+}
+
+/* Background color utilities for notes with higher opacity */
+.bg-note-yellow\/10 {
+  background-color: hsl(var(--note-yellow) / 0.1);
+}
+
+.bg-note-blue\/10 {
+  background-color: hsl(var(--note-blue) / 0.1);
+}
+
+.bg-note-green\/10 {
+  background-color: hsl(var(--note-green) / 0.1);
+}
+
+.bg-note-pink\/10 {
+  background-color: hsl(var(--note-pink) / 0.1);
+}
+
+.bg-note-purple\/10 {
+  background-color: hsl(var(--note-purple) / 0.1);
+}
+
+.bg-note-orange\/10 {
+  background-color: hsl(var(--note-orange) / 0.1);
+}
