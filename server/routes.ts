@@ -1,669 +1,636 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { z } from "zod";
+import * as z from "zod";
 import { 
   insertUserSchema, 
   insertFolderSchema, 
-  insertTagSchema, 
   insertNoteSchema, 
-  insertNoteTagSchema,
-  webdavConfigSchema
+  insertTagSchema,
+  type User,
 } from "@shared/schema";
 
+// Helper function to validate request body
+function validateRequest<T extends z.ZodTypeAny>(
+  schema: T,
+  req: Request,
+  res: Response
+): z.infer<T> | null {
+  try {
+    return schema.parse(req.body);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ 
+        message: "Validation failed", 
+        errors: err.errors 
+      });
+    } else {
+      res.status(400).json({ message: "Invalid request data" });
+    }
+    return null;
+  }
+}
+
+// Helper function to get user ID from session
+function getUserId(req: Request): number | null {
+  return req.session?.userId || null;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
-  // prefix all routes with /api
-  
-  // Auth endpoints
-  app.post('/api/auth/register', async (req, res) => {
+  // User routes
+  app.post("/api/auth/register", async (req: Request, res: Response) => {
+    const userData = validateRequest(insertUserSchema, req, res);
+    if (!userData) return;
+
     try {
-      const validatedData = insertUserSchema.parse(req.body);
-      const user = await storage.createUser(validatedData);
+      // Check if user already exists
+      const existingByUsername = await storage.getUserByUsername(userData.username);
+      const existingByEmail = await storage.getUserByEmail(userData.email);
       
-      // Create a session
+      if (existingByUsername) {
+        return res.status(400).json({ message: "Username already taken" });
+      }
+      
+      if (existingByEmail) {
+        return res.status(400).json({ message: "Email already in use" });
+      }
+
+      const user = await storage.createUser(userData);
+      
+      // Don't return password in response
+      const { password, ...userWithoutPassword } = user;
+      
+      // Set user session
       req.session.userId = user.id;
       
-      res.status(201).json(user);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      res.status(201).json(userWithoutPassword);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to create user" });
     }
   });
-  
-  app.post('/api/auth/login', async (req, res) => {
+
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ message: "Username and password are required" });
+    }
+
     try {
-      const { email, password } = req.body;
+      const user = await storage.getUserByUsername(username);
       
-      if (!email || !password) {
-        return res.status(400).json({ error: 'Email and password are required' });
+      if (!user || user.password !== password) {
+        return res.status(401).json({ message: "Invalid credentials" });
       }
-      
-      const user = await storage.getUserByEmail(email);
-      
-      if (!user) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-      
-      const isPasswordValid = await storage.validatePassword(user.id, password);
-      
-      if (!isPasswordValid) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-      
-      // Create a session
+
+      // Set user session
       req.session.userId = user.id;
       
-      res.json(user);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      // Don't return password in response
+      const { password: _, ...userWithoutPassword } = user;
+      
+      res.status(200).json(userWithoutPassword);
+    } catch (err) {
+      res.status(500).json({ message: "Login failed" });
     }
   });
-  
-  app.post('/api/auth/logout', (req, res) => {
+
+  app.post("/api/auth/logout", (req: Request, res: Response) => {
     req.session.destroy((err) => {
       if (err) {
-        return res.status(500).json({ error: 'Failed to logout' });
+        return res.status(500).json({ message: "Failed to logout" });
       }
-      
-      res.json({ success: true });
+      res.status(200).json({ message: "Logged out successfully" });
     });
   });
-  
-  app.get('/api/auth/me', async (req, res) => {
+
+  app.get("/api/auth/me", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      
-      const user = await storage.getUser(req.session.userId);
+      const user = await storage.getUser(userId);
       
       if (!user) {
-        return res.status(401).json({ error: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
+
+      // Don't return password in response
+      const { password, ...userWithoutPassword } = user;
       
-      res.json(user);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      res.status(200).json(userWithoutPassword);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get user" });
     }
   });
-  
-  // WebDAV endpoints
-  app.get('/api/webdav/config', async (req, res) => {
+
+  // Update user settings
+  app.patch("/api/users/settings", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
       }
+
+      const updatedUser = await storage.updateUser(userId, req.body);
       
-      const config = await storage.getWebDAVConfig(req.session.userId);
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Don't return password in response
+      const { password, ...userWithoutPassword } = updatedUser;
       
-      res.json(config || { endpoint: '', enabled: false });
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      res.status(200).json(userWithoutPassword);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to update user settings" });
     }
   });
-  
-  app.put('/api/webdav/config', async (req, res) => {
+
+  // Folder routes
+  app.get("/api/folders", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      
-      const validatedData = webdavConfigSchema.parse(req.body);
-      const config = await storage.updateWebDAVConfig(req.session.userId, validatedData);
-      
-      res.json(config);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      const folders = await storage.getFolders(userId);
+      res.status(200).json(folders);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get folders" });
     }
   });
-  
-  // Notes endpoints
-  app.get('/api/notes', async (req, res) => {
-    try {
-      let notes;
-      
-      if (req.session.userId) {
-        // Get user's notes if logged in
-        notes = await storage.getNotesByUser(req.session.userId);
-      } else {
-        // Get local notes if not logged in
-        notes = await storage.getLocalNotes();
-      }
-      
-      res.json(notes);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+
+  app.post("/api/folders", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
     }
-  });
-  
-  app.post('/api/notes', async (req, res) => {
+
+    const folderData = validateRequest(insertFolderSchema, req, res);
+    if (!folderData) return;
+
     try {
-      const validatedData = insertNoteSchema.parse({
-        ...req.body,
-        userId: req.session.userId || null
-      });
+      // Ensure folder belongs to the authenticated user
+      folderData.userId = userId;
       
-      const note = await storage.createNote(validatedData);
-      
-      res.status(201).json(note);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  app.get('/api/notes/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid note ID' });
-      }
-      
-      const note = await storage.getNote(id);
-      
-      if (!note) {
-        return res.status(404).json({ error: 'Note not found' });
-      }
-      
-      // Check if the note belongs to the current user
-      if (note.userId && note.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to access this note' });
-      }
-      
-      res.json(note);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  app.put('/api/notes/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid note ID' });
-      }
-      
-      const note = await storage.getNote(id);
-      
-      if (!note) {
-        return res.status(404).json({ error: 'Note not found' });
-      }
-      
-      // Check if the note belongs to the current user
-      if (note.userId && note.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to update this note' });
-      }
-      
-      const validatedData = insertNoteSchema.partial().parse({
-        ...req.body,
-        id,
-        userId: req.session.userId || null
-      });
-      
-      const updatedNote = await storage.updateNote(id, validatedData);
-      
-      res.json(updatedNote);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  app.delete('/api/notes/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid note ID' });
-      }
-      
-      const note = await storage.getNote(id);
-      
-      if (!note) {
-        return res.status(404).json({ error: 'Note not found' });
-      }
-      
-      // Check if the note belongs to the current user
-      if (note.userId && note.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to delete this note' });
-      }
-      
-      await storage.deleteNote(id);
-      
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  // Folders endpoints
-  app.get('/api/folders', async (req, res) => {
-    try {
-      let folders;
-      
-      if (req.session.userId) {
-        // Get user's folders if logged in
-        folders = await storage.getFoldersByUser(req.session.userId);
-      } else {
-        // Get local folders if not logged in
-        folders = await storage.getLocalFolders();
-      }
-      
-      res.json(folders);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  app.post('/api/folders', async (req, res) => {
-    try {
-      const validatedData = insertFolderSchema.parse({
-        ...req.body,
-        userId: req.session.userId || null
-      });
-      
-      const folder = await storage.createFolder(validatedData);
-      
+      const folder = await storage.createFolder(folderData);
       res.status(201).json(folder);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to create folder" });
     }
   });
-  
-  app.get('/api/folders/:id', async (req, res) => {
+
+  app.patch("/api/folders/:id", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const folderId = parseInt(req.params.id);
+    
+    if (isNaN(folderId)) {
+      return res.status(400).json({ message: "Invalid folder ID" });
+    }
+
     try {
-      const id = parseInt(req.params.id);
-      
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid folder ID' });
-      }
-      
-      const folder = await storage.getFolder(id);
+      const folder = await storage.getFolder(folderId);
       
       if (!folder) {
-        return res.status(404).json({ error: 'Folder not found' });
+        return res.status(404).json({ message: "Folder not found" });
       }
       
-      // Check if the folder belongs to the current user
-      if (folder.userId && folder.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to access this folder' });
+      if (folder.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to update this folder" });
+      }
+
+      const updatedFolder = await storage.updateFolder(folderId, req.body);
+      
+      if (!updatedFolder) {
+        return res.status(404).json({ message: "Folder not found" });
       }
       
-      res.json(folder);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      res.status(200).json(updatedFolder);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to update folder" });
     }
   });
-  
-  app.put('/api/folders/:id', async (req, res) => {
+
+  app.delete("/api/folders/:id", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const folderId = parseInt(req.params.id);
+    
+    if (isNaN(folderId)) {
+      return res.status(400).json({ message: "Invalid folder ID" });
+    }
+
     try {
-      const id = parseInt(req.params.id);
-      
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid folder ID' });
-      }
-      
-      const folder = await storage.getFolder(id);
+      const folder = await storage.getFolder(folderId);
       
       if (!folder) {
-        return res.status(404).json({ error: 'Folder not found' });
+        return res.status(404).json({ message: "Folder not found" });
       }
       
-      // Check if the folder belongs to the current user
-      if (folder.userId && folder.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to update this folder' });
+      if (folder.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to delete this folder" });
       }
-      
-      const validatedData = insertFolderSchema.partial().parse({
-        ...req.body,
-        id,
-        userId: req.session.userId || null
-      });
-      
-      const updatedFolder = await storage.updateFolder(id, validatedData);
-      
-      res.json(updatedFolder);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+
+      await storage.deleteFolder(folderId);
+      res.status(200).json({ message: "Folder deleted successfully" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to delete folder" });
     }
   });
-  
-  app.delete('/api/folders/:id', async (req, res) => {
+
+  // Note routes
+  app.get("/api/notes", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
     try {
-      const id = parseInt(req.params.id);
-      
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid folder ID' });
-      }
-      
-      const folder = await storage.getFolder(id);
+      const notes = await storage.getNotesWithTags(userId);
+      res.status(200).json(notes);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get notes" });
+    }
+  });
+
+  app.get("/api/folders/:id/notes", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const folderId = parseInt(req.params.id);
+    
+    if (isNaN(folderId)) {
+      return res.status(400).json({ message: "Invalid folder ID" });
+    }
+
+    try {
+      const folder = await storage.getFolder(folderId);
       
       if (!folder) {
-        return res.status(404).json({ error: 'Folder not found' });
+        return res.status(404).json({ message: "Folder not found" });
       }
       
-      // Check if the folder belongs to the current user
-      if (folder.userId && folder.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to delete this folder' });
+      if (folder.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to access this folder" });
       }
-      
-      await storage.deleteFolder(id);
-      
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+
+      const notes = await storage.getNotesByFolder(folderId);
+      res.status(200).json(notes);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get notes" });
     }
   });
-  
-  // Tags endpoints
-  app.get('/api/tags', async (req, res) => {
-    try {
-      let tags;
-      
-      if (req.session.userId) {
-        // Get user's tags if logged in
-        tags = await storage.getTagsByUser(req.session.userId);
-      } else {
-        // Get local tags if not logged in
-        tags = await storage.getLocalTags();
-      }
-      
-      res.json(tags);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+
+  app.get("/api/notes/:id", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
     }
-  });
-  
-  app.post('/api/tags', async (req, res) => {
-    try {
-      const validatedData = insertTagSchema.parse({
-        ...req.body,
-        userId: req.session.userId || null
-      });
-      
-      const tag = await storage.createTag(validatedData);
-      
-      res.status(201).json(tag);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+
+    const noteId = parseInt(req.params.id);
+    
+    if (isNaN(noteId)) {
+      return res.status(400).json({ message: "Invalid note ID" });
     }
-  });
-  
-  app.get('/api/tags/:id', async (req, res) => {
+
     try {
-      const id = parseInt(req.params.id);
-      
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid tag ID' });
-      }
-      
-      const tag = await storage.getTag(id);
-      
-      if (!tag) {
-        return res.status(404).json({ error: 'Tag not found' });
-      }
-      
-      // Check if the tag belongs to the current user
-      if (tag.userId && tag.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to access this tag' });
-      }
-      
-      res.json(tag);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  app.put('/api/tags/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid tag ID' });
-      }
-      
-      const tag = await storage.getTag(id);
-      
-      if (!tag) {
-        return res.status(404).json({ error: 'Tag not found' });
-      }
-      
-      // Check if the tag belongs to the current user
-      if (tag.userId && tag.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to update this tag' });
-      }
-      
-      const validatedData = insertTagSchema.partial().parse({
-        ...req.body,
-        id,
-        userId: req.session.userId || null
-      });
-      
-      const updatedTag = await storage.updateTag(id, validatedData);
-      
-      res.json(updatedTag);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  app.delete('/api/tags/:id', async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'Invalid tag ID' });
-      }
-      
-      const tag = await storage.getTag(id);
-      
-      if (!tag) {
-        return res.status(404).json({ error: 'Tag not found' });
-      }
-      
-      // Check if the tag belongs to the current user
-      if (tag.userId && tag.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to delete this tag' });
-      }
-      
-      await storage.deleteTag(id);
-      
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  // Note Tags endpoints
-  app.post('/api/note-tags', async (req, res) => {
-    try {
-      const validatedData = insertNoteTagSchema.parse(req.body);
-      
-      // Check if the note and tag exist and belong to the current user
-      const note = await storage.getNote(validatedData.noteId);
-      const tag = await storage.getTag(validatedData.tagId);
+      const note = await storage.getNoteWithTags(noteId);
       
       if (!note) {
-        return res.status(404).json({ error: 'Note not found' });
+        return res.status(404).json({ message: "Note not found" });
       }
       
-      if (!tag) {
-        return res.status(404).json({ error: 'Tag not found' });
+      if (note.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to access this note" });
       }
       
-      // Check if the note belongs to the current user
-      if (note.userId && note.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to update this note' });
-      }
-      
-      // Check if the tag belongs to the current user
-      if (tag.userId && tag.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to use this tag' });
-      }
-      
-      const noteTag = await storage.addTagToNote(validatedData.noteId, validatedData.tagId);
-      
-      res.status(201).json(noteTag);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      res.status(200).json(note);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get note" });
     }
   });
-  
-  app.delete('/api/note-tags/:noteId/:tagId', async (req, res) => {
+
+  app.post("/api/notes", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const noteData = validateRequest(insertNoteSchema, req, res);
+    if (!noteData) return;
+
     try {
-      const noteId = parseInt(req.params.noteId);
-      const tagId = parseInt(req.params.tagId);
+      // Ensure note belongs to the authenticated user
+      noteData.userId = userId;
       
-      if (isNaN(noteId) || isNaN(tagId)) {
-        return res.status(400).json({ error: 'Invalid note or tag ID' });
+      // If folder is specified, check it exists and belongs to user
+      if (noteData.folderId) {
+        const folder = await storage.getFolder(noteData.folderId);
+        
+        if (!folder) {
+          return res.status(404).json({ message: "Folder not found" });
+        }
+        
+        if (folder.userId !== userId) {
+          return res.status(403).json({ message: "Not authorized to use this folder" });
+        }
       }
       
-      // Check if the note and tag exist and belong to the current user
+      const note = await storage.createNote(noteData);
+      res.status(201).json(note);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to create note" });
+    }
+  });
+
+  app.patch("/api/notes/:id", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const noteId = parseInt(req.params.id);
+    
+    if (isNaN(noteId)) {
+      return res.status(400).json({ message: "Invalid note ID" });
+    }
+
+    try {
+      const note = await storage.getNote(noteId);
+      
+      if (!note) {
+        return res.status(404).json({ message: "Note not found" });
+      }
+      
+      if (note.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to update this note" });
+      }
+
+      // If folder is being updated, check it exists and belongs to user
+      if (req.body.folderId) {
+        const folder = await storage.getFolder(req.body.folderId);
+        
+        if (!folder) {
+          return res.status(404).json({ message: "Folder not found" });
+        }
+        
+        if (folder.userId !== userId) {
+          return res.status(403).json({ message: "Not authorized to use this folder" });
+        }
+      }
+
+      const updatedNote = await storage.updateNote(noteId, req.body);
+      
+      if (!updatedNote) {
+        return res.status(404).json({ message: "Note not found" });
+      }
+      
+      res.status(200).json(updatedNote);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to update note" });
+    }
+  });
+
+  app.delete("/api/notes/:id", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const noteId = parseInt(req.params.id);
+    
+    if (isNaN(noteId)) {
+      return res.status(400).json({ message: "Invalid note ID" });
+    }
+
+    try {
+      const note = await storage.getNote(noteId);
+      
+      if (!note) {
+        return res.status(404).json({ message: "Note not found" });
+      }
+      
+      if (note.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to delete this note" });
+      }
+
+      await storage.deleteNote(noteId);
+      res.status(200).json({ message: "Note deleted successfully" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to delete note" });
+    }
+  });
+
+  // Tag routes
+  app.get("/api/tags", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    try {
+      const tags = await storage.getTags(userId);
+      res.status(200).json(tags);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to get tags" });
+    }
+  });
+
+  app.post("/api/tags", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const tagData = validateRequest(insertTagSchema, req, res);
+    if (!tagData) return;
+
+    try {
+      // Ensure tag belongs to the authenticated user
+      tagData.userId = userId;
+      
+      const tag = await storage.createTag(tagData);
+      res.status(201).json(tag);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to create tag" });
+    }
+  });
+
+  app.patch("/api/tags/:id", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const tagId = parseInt(req.params.id);
+    
+    if (isNaN(tagId)) {
+      return res.status(400).json({ message: "Invalid tag ID" });
+    }
+
+    try {
+      const tag = await storage.getTag(tagId);
+      
+      if (!tag) {
+        return res.status(404).json({ message: "Tag not found" });
+      }
+      
+      if (tag.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to update this tag" });
+      }
+
+      const updatedTag = await storage.updateTag(tagId, req.body);
+      
+      if (!updatedTag) {
+        return res.status(404).json({ message: "Tag not found" });
+      }
+      
+      res.status(200).json(updatedTag);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to update tag" });
+    }
+  });
+
+  app.delete("/api/tags/:id", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const tagId = parseInt(req.params.id);
+    
+    if (isNaN(tagId)) {
+      return res.status(400).json({ message: "Invalid tag ID" });
+    }
+
+    try {
+      const tag = await storage.getTag(tagId);
+      
+      if (!tag) {
+        return res.status(404).json({ message: "Tag not found" });
+      }
+      
+      if (tag.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to delete this tag" });
+      }
+
+      await storage.deleteTag(tagId);
+      res.status(200).json({ message: "Tag deleted successfully" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to delete tag" });
+    }
+  });
+
+  // Note-Tag operations
+  app.post("/api/notes/:noteId/tags/:tagId", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const noteId = parseInt(req.params.noteId);
+    const tagId = parseInt(req.params.tagId);
+    
+    if (isNaN(noteId) || isNaN(tagId)) {
+      return res.status(400).json({ message: "Invalid note or tag ID" });
+    }
+
+    try {
       const note = await storage.getNote(noteId);
       const tag = await storage.getTag(tagId);
       
       if (!note) {
-        return res.status(404).json({ error: 'Note not found' });
+        return res.status(404).json({ message: "Note not found" });
       }
       
       if (!tag) {
-        return res.status(404).json({ error: 'Tag not found' });
+        return res.status(404).json({ message: "Tag not found" });
       }
       
-      // Check if the note belongs to the current user
-      if (note.userId && note.userId !== req.session.userId) {
-        return res.status(403).json({ error: 'You do not have permission to update this note' });
+      if (note.userId !== userId || tag.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to perform this action" });
+      }
+
+      const noteTag = await storage.addTagToNote(noteId, tagId);
+      res.status(201).json(noteTag);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to add tag to note" });
+    }
+  });
+
+  app.delete("/api/notes/:noteId/tags/:tagId", async (req: Request, res: Response) => {
+    const userId = getUserId(req);
+    
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const noteId = parseInt(req.params.noteId);
+    const tagId = parseInt(req.params.tagId);
+    
+    if (isNaN(noteId) || isNaN(tagId)) {
+      return res.status(400).json({ message: "Invalid note or tag ID" });
+    }
+
+    try {
+      const note = await storage.getNote(noteId);
+      const tag = await storage.getTag(tagId);
+      
+      if (!note) {
+        return res.status(404).json({ message: "Note not found" });
       }
       
+      if (!tag) {
+        return res.status(404).json({ message: "Tag not found" });
+      }
+      
+      if (note.userId !== userId || tag.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to perform this action" });
+      }
+
       await storage.removeTagFromNote(noteId, tagId);
-      
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+      res.status(200).json({ message: "Tag removed from note successfully" });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to remove tag from note" });
     }
   });
-  
-  // Supabase sync endpoints
-  app.get('/api/supabase/test', (req, res) => {
-    // Just a simple endpoint to test if Supabase connection is working
-    res.json({ success: true });
-  });
-  
-  app.get('/api/supabase/notes', async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      
-      const notes = await storage.getNotesByUser(req.session.userId);
-      res.json(notes);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  app.get('/api/supabase/folders', async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      
-      const folders = await storage.getFoldersByUser(req.session.userId);
-      res.json(folders);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  app.get('/api/supabase/tags', async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      
-      const tags = await storage.getTagsByUser(req.session.userId);
-      res.json(tags);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  app.get('/api/supabase/note-tags', async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      
-      const noteTags = await storage.getNoteTagsByUser(req.session.userId);
-      res.json(noteTags);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
-  app.post('/api/supabase/sync', async (req, res) => {
-    try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      
-      const { notes, folders, tags, noteTags } = req.body;
-      
-      // Sync data with Supabase
-      if (notes) {
-        for (const note of notes) {
-          if (note.id > 0) {
-            // Update existing note
-            await storage.updateNote(note.id, { ...note, userId: req.session.userId });
-          } else {
-            // Create new note
-            await storage.createNote({ ...note, userId: req.session.userId });
-          }
-        }
-      }
-      
-      if (folders) {
-        for (const folder of folders) {
-          if (folder.id > 0) {
-            // Update existing folder
-            await storage.updateFolder(folder.id, { ...folder, userId: req.session.userId });
-          } else {
-            // Create new folder
-            await storage.createFolder({ ...folder, userId: req.session.userId });
-          }
-        }
-      }
-      
-      if (tags) {
-        for (const tag of tags) {
-          if (tag.id > 0) {
-            // Update existing tag
-            await storage.updateTag(tag.id, { ...tag, userId: req.session.userId });
-          } else {
-            // Create new tag
-            await storage.createTag({ ...tag, userId: req.session.userId });
-          }
-        }
-      }
-      
-      if (noteTags) {
-        for (const noteTag of noteTags) {
-          // Check if the note and tag belong to the current user
-          const note = await storage.getNote(noteTag.noteId);
-          const tag = await storage.getTag(noteTag.tagId);
-          
-          if (note && tag && note.userId === req.session.userId && (!tag.userId || tag.userId === req.session.userId)) {
-            await storage.addTagToNote(noteTag.noteId, noteTag.tagId);
-          }
-        }
-      }
-      
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-  
+
   const httpServer = createServer(app);
-  
   return httpServer;
 }
